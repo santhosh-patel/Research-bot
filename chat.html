@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROHUM Researcher</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+    <div class="container">
+        <div class="chat-history">
+            <div class="history-header">
+                <h2>Chat History</h2>
+                <button class="new-chat-btn">New Chat</button>
+            </div>
+            
+            <div class="chat-list">
+                <!-- Chat history items will be added here -->
+            </div>
+        </div>
+        <div class="chat-window">
+            <div class="chat-messages">
+                <!-- Messages will be added here -->
+            </div>
+            <div class="input-area">
+                <div class="recording-indicator">
+                    <i class="fas fa-microphone"></i>
+                    Recording...
+                </div>
+                <div class="upload-preview"></div>
+                <div class="input-container">
+                    <button class="mic-btn" title="Voice input">
+                        <i class="fas fa-microphone"></i>
+                    </button>
+                    <button class="file-btn" title="Upload file">
+                        <i class="fas fa-paperclip"></i>
+                    </button>
+                    <input type="text" class="message-input" placeholder="Type your message...">
+                    <button class="send-btn" title="Send message">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <input type="file" id="file-input" accept="image/*,application/pdf">
+            </div>
+    </div>
+
+
+    <script>
+         const API_KEY = "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";
+         class ChatApp {
+    constructor() {
+        this.chats = JSON.parse(localStorage.getItem('chats')) || [];
+        this.currentChatId = this.chats.length ? this.chats[0].id : null;
+        this.isRecording = false;
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.setupEventListeners();
+        this.renderChatList();
+        if (!this.currentChatId) this.createNewChat();
+    }
+
+    setupEventListeners() {
+        // Existing listeners
+        document.querySelector('.new-chat-btn').addEventListener('click', () => this.createNewChat());
+        document.querySelector('.send-btn').addEventListener('click', () => this.sendMessage());
+        document.querySelector('.message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.sendMessage();
+        });
+
+        // Voice input listeners
+        document.querySelector('.voice-input-btn').addEventListener('click', () => this.toggleVoiceInput());
+        
+        // File input listeners
+        document.querySelector('.file-input').addEventListener('change', (e) => this.handleFileInput(e));
+        
+        // Chat management listeners
+        document.querySelector('.chat-list').addEventListener('contextmenu', (e) => this.handleChatContextMenu(e));
+    }
+
+    async toggleVoiceInput() {
+        const voiceBtn = document.querySelector('.voice-input-btn');
+        
+        if (!this.isRecording) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                this.mediaRecorder = new MediaRecorder(stream);
+                this.audioChunks = [];
+
+                this.mediaRecorder.addEventListener('dataavailable', (event) => {
+                    this.audioChunks.push(event.data);
+                });
+
+                this.mediaRecorder.addEventListener('stop', async () => {
+                    const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+                    await this.processVoiceInput(audioBlob);
+                });
+
+                this.mediaRecorder.start();
+                this.isRecording = true;
+                voiceBtn.classList.add('recording');
+                voiceBtn.textContent = 'Stop Recording';
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                alert('Unable to access microphone. Please check permissions.');
+            }
+        } else {
+            this.mediaRecorder.stop();
+            this.isRecording = false;
+            voiceBtn.classList.remove('recording');
+            voiceBtn.textContent = 'Start Recording';
+        }
+    }
+
+    async processVoiceInput(audioBlob) {
+        try {
+            // Convert audio to base64
+            const reader = new FileReader();
+            reader.readAsDataURL(audioBlob);
+            reader.onloadend = async () => {
+                const base64Audio = reader.result.split(',')[1];
+                
+                // Here you would typically send this to a speech-to-text API
+                // For this example, we'll simulate a response
+                const transcription = "This is where you would integrate with a speech-to-text API";
+                
+                // Add transcription to message input
+                document.querySelector('.message-input').value = transcription;
+            };
+        } catch (error) {
+            console.error('Error processing voice input:', error);
+            alert('Error processing voice input. Please try again.');
+        }
+    }
+
+    async handleFileInput(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        try {
+            if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                throw new Error('File size too large. Please upload a file smaller than 5MB.');
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const content = e.target.result;
+                const messageInput = document.querySelector('.message-input');
+                
+                if (file.type.startsWith('image/')) {
+                    // Handle image file
+                    messageInput.value = `[Image uploaded: ${file.name}]`;
+                } else if (file.type === 'text/plain') {
+                    // Handle text file
+                    messageInput.value = content;
+                } else {
+                    messageInput.value = `[File uploaded: ${file.name}]`;
+                }
+            };
+
+            if (file.type.startsWith('image/') || file.type === 'text/plain') {
+                reader.readAsText(file);
+            } else {
+                reader.readAsDataURL(file);
+            }
+        } catch (error) {
+            console.error('Error processing file:', error);
+            alert(error.message);
+        }
+    }
+
+    handleChatContextMenu(event) {
+        event.preventDefault();
+        const chatItem = event.target.closest('.chat-item');
+        if (!chatItem) return;
+
+        const chatId = chatItem.dataset.id;
+        const chat = this.chats.find(c => c.id === chatId);
+        
+        // Remove existing context menu if any
+        this.removeContextMenu();
+
+        // Create context menu
+        const contextMenu = document.createElement('div');
+        contextMenu.className = 'context-menu';
+        contextMenu.innerHTML = `
+            <div class="context-menu-item edit">Rename Chat</div>
+            <div class="context-menu-item delete">Delete Chat</div>
+        `;
+
+        // Position context menu
+        contextMenu.style.position = 'absolute';
+        contextMenu.style.left = `${event.pageX}px`;
+        contextMenu.style.top = `${event.pageY}px`;
+
+        // Add event listeners
+        contextMenu.querySelector('.edit').addEventListener('click', () => {
+            this.renameChatPrompt(chat);
+            this.removeContextMenu();
+        });
+
+        contextMenu.querySelector('.delete').addEventListener('click', () => {
+            this.deleteChat(chatId);
+            this.removeContextMenu();
+        });
+
+        document.body.appendChild(contextMenu);
+
+        // Close context menu when clicking outside
+        document.addEventListener('click', this.removeContextMenu);
+    }
+
+    removeContextMenu() {
+        const existingMenu = document.querySelector('.context-menu');
+        if (existingMenu) {
+            existingMenu.remove();
+        }
+    }
+
+    renameChatPrompt(chat) {
+        const newName = prompt('Enter new chat name:', chat.name);
+        if (newName && newName.trim()) {
+            chat.name = newName.trim();
+            this.saveChats();
+            this.renderChatList();
+        }
+    }
+
+    deleteChat(chatId) {
+        if (!confirm('Are you sure you want to delete this chat?')) return;
+
+        const index = this.chats.findIndex(c => c.id === chatId);
+        if (index === -1) return;
+
+        this.chats.splice(index, 1);
+
+        if (this.currentChatId === chatId) {
+            this.currentChatId = this.chats.length ? this.chats[0].id : null;
+            if (!this.currentChatId) this.createNewChat();
+        }
+
+        this.saveChats();
+        this.renderChatList();
+        this.renderMessages();
+    }
+
+    // Modified createNewChat to handle drag-and-drop reordering
+    createNewChat() {
+        const chatId = Date.now().toString();
+        const newChat = {
+            id: chatId,
+            name: `Chat ${this.chats.length + 1}`,
+            messages: []
+        };
+        this.chats.unshift(newChat);
+        this.currentChatId = chatId;
+        this.saveChats();
+        this.renderChatList();
+        this.renderMessages();
+    }
+
+    renderChatList() {
+        const chatList = document.querySelector('.chat-list');
+        chatList.innerHTML = this.chats.map(chat => `
+            <div class="chat-item ${chat.id === this.currentChatId ? 'active' : ''}" 
+                 data-id="${chat.id}"
+                 draggable="true">
+                <div class="chat-item-content">
+                    <span class="chat-item-text">${chat.name}</span>
+                    <div class="chat-item-actions">
+                        <button class="edit-chat-btn" title="Rename chat">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="delete-chat-btn" title="Delete chat">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        // Add click listeners
+        chatList.querySelectorAll('.chat-item').forEach(item => {
+            const chatId = item.dataset.id;
+
+            // Chat selection click
+            item.querySelector('.chat-item-text').addEventListener('click', () => {
+                this.currentChatId = chatId;
+                this.renderChatList();
+                this.renderMessages();
+            });
+
+            // Edit button click
+            item.querySelector('.edit-chat-btn').addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent chat selection
+                const chat = this.chats.find(c => c.id === chatId);
+                this.renameChatPrompt(chat);
+            });
+
+            // Delete button click
+            item.querySelector('.delete-chat-btn').addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent chat selection
+                this.deleteChat(chatId);
+            });
+
+            // Drag and drop listeners (remain the same)
+            item.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', item.dataset.id);
+                item.classList.add('dragging');
+            });
+
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+            });
+
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                const draggingItem = document.querySelector('.dragging');
+                if (draggingItem !== item) {
+                    const rect = item.getBoundingClientRect();
+                    const offset = e.clientY - rect.top - rect.height / 2;
+                    if (offset < 0) {
+                        item.parentNode.insertBefore(draggingItem, item);
+                    } else {
+                        item.parentNode.insertBefore(draggingItem, item.nextSibling);
+                    }
+                }
+            });
+        });
+    }
+
+    // Existing methods remain the same...
+    async renderMessages() {
+        const messagesDiv = document.querySelector('.chat-messages');
+        const currentChat = this.chats.find(c => c.id === this.currentChatId);
+
+        if (!currentChat) {
+            messagesDiv.innerHTML = '';
+            return;
+        }
+
+        messagesDiv.innerHTML = '';
+        currentChat.messages.forEach(msg => {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${msg.role === 'user' ? 'user-message' : 'bot-message'}`;
+            messageDiv.textContent = msg.content;
+            messagesDiv.appendChild(messageDiv);
+        });
+
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    async sendMessage() {
+        const input = document.querySelector('.message-input');
+        const message = input.value.trim();
+
+        if (!message) return;
+
+        const currentChat = this.chats.find(c => c.id === this.currentChatId);
+        currentChat.messages.push({ role: 'user', content: message });
+
+        input.value = '';
+        this.saveChats();
+
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'loading';
+        loadingDiv.textContent = 'Thinking...';
+        document.querySelector('.chat-messages').appendChild(loadingDiv);
+
+        try {
+            const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${API_KEY}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "mixtral-8x7b-32768",
+                    messages: [{ role: "user", content: message }]
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const botResponse = data.choices[0].message.content;
+
+            currentChat.messages.push({ role: 'assistant', content: botResponse });
+            this.saveChats();
+            this.renderMessages();
+        } catch (error) {
+            currentChat.messages.push({ role: 'assistant', content: `Error: ${error.message}` });
+            this.saveChats();
+            this.renderMessages();
+        } finally {
+            loadingDiv.remove();
+        }
+    }
+
+    saveChats() {
+        localStorage.setItem('chats', JSON.stringify(this.chats));
+    }
+}
+
+// Initialize the app
+const chatApp = new ChatApp();
+        
+    </script>
+
+</body>
+</html>
